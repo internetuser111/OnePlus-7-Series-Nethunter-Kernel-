@@ -4,68 +4,87 @@ on:
   push:
     paths:
       - ".github/workflows/kernel.yml"
+      - "Kernel/configs/build.config.json"
   workflow_dispatch:
     inputs:
-      COMPILER_CHOICE:
-        description: 'Select Compiler Toolchain'
+      COMPILER_NUMBER:
+        description: 'Enter compiler number(s) (1-11) - Use format: single number (e.g. 1) or range (e.g. 1:4)'
         required: true
-        default: 'proton'
-        type: choice
-        options:
-        - proton
-        - aosp
-        - eva
-        - neutron
-        - nexus
-        - zyc
-        - cosmic
-        - azure
-        - sdclang
-        - ghost
-        - gray
+        default: '1'
+        type: string
   schedule:
     - cron: "14 13 * * 5"
 
 jobs:
-  Read-configuration:
-    name: 📋 Parse Configuration
+  Parse-Input:
+    name: 📋 Parse Configuration & Input
     runs-on: ubuntu-latest
     outputs:
-      CONFIGS: ${{ steps.generate-matrix.outputs.CONFIGS }}
+      compiler_list: ${{ steps.parse-input.outputs.compiler_list }}
       BUILD_DATE: ${{ steps.generate-builddate.outputs.BUILDDATE }}
-      COMPILER: ${{ github.event.inputs.COMPILER_CHOICE || 'proton' }}
+      KERNEL_CONFIG: ${{ steps.parse-config.outputs.kernel_config }}
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔄 Generate Build Matrix
-        id: generate-matrix
+      - name: 🔄 Parse Configuration and Compiler Input
+        id: parse-input
         run: |
-          echo "CONFIGS<<EOF" >> $GITHUB_OUTPUT
-          jq -s '[.[][]]' Kernel/configs/*.config.json >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Read config file
+          CONFIG_FILE="Kernel/configs/build.config.json"
+          
+          # Get compiler input
+          INPUT="${{ github.event.inputs.COMPILER_NUMBER || '1' }}"
+          
+          # Read compiler mappings from config
+          COMPILER_MAP=$(jq -r '.compilerToolchains | map({(.id|tostring): .code}) | add' $CONFIG_FILE)
+          
+          # Function to get compiler code by ID
+          get_compiler_code() {
+            echo $COMPILER_MAP | jq -r ".[\""$1"\"]"
+          }
+          
+          # Process input
+          if [[ $INPUT =~ ^[0-9]+:[0-9]+$ ]]; then
+            START=$(echo $INPUT | cut -d':' -f1)
+            END=$(echo $INPUT | cut -d':' -f2)
+            SELECTED=()
+            for ((i=START; i<=END; i++)); do
+              COMPILER=$(get_compiler_code $i)
+              if [ ! -z "$COMPILER" ] && [ "$COMPILER" != "null" ]; then
+                SELECTED+=("$COMPILER")
+              fi
+            done
+          else
+            COMPILER=$(get_compiler_code $INPUT)
+            if [ ! -z "$COMPILER" ] && [ "$COMPILER" != "null" ]; then
+              SELECTED=("$COMPILER")
+            fi
+          fi
+          
+          JSON_ARRAY=$(printf '%s\n' "${SELECTED[@]}" | jq -R . | jq -s .)
+          echo "compiler_list=$JSON_ARRAY" >> $GITHUB_OUTPUT
+
+      - name: 📥 Parse Kernel Configuration
+        id: parse-config
+        run: |
+          CONFIG_FILE="Kernel/configs/build.config.json"
+          KERNEL_CONFIG=$(jq -r '.buildConfig.kernelConfig' $CONFIG_FILE)
+          echo "kernel_config=$KERNEL_CONFIG" >> $GITHUB_OUTPUT
 
       - name: ⏰ Set Build Date
         id: generate-builddate
         run: echo "BUILDDATE=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
 
   Build-Kernel:
-    name: "🛠️ Building with ${{ needs.Read-configuration.outputs.COMPILER }}"
+    name: "🛠️ Building with ${{ matrix.compiler }}"
     runs-on: ubuntu-latest
-    needs: Read-configuration
-    env:
-      WORKSPACE: ${{ github.workspace }}
-      BUILD_DATE: "${{ needs.Read-configuration.outputs.BUILD_DATE }}"
-      COMPILER_CHOICE: ${{ needs.Read-configuration.outputs.COMPILER }}
-      KERNEL_NAME: "Op7Series_Custom_Kernel"
-      KERNEL_REPO: "https://github.com/yaap/kernel_oneplus_sm8150"
-      KERNEL_BRANCH: "fourteen"
-      KERNEL_DEVICE: "Oneplus7Series"
-      KERNEL_DEFCONFIG: "gulch_defconfig"
-      OUT_DIR: "${{ github.workspace }}/out"
-      CCACHE_DIR: "${{ github.workspace }}/ccache"
-      ANYKERNEL3_DIR: "${{ github.workspace }}/AnyKernel3"
-      
+    needs: Parse-Input
+    strategy:
+      matrix:
+        compiler: ${{ fromJSON(needs.Parse-Input.outputs.compiler_list) }}
+      fail-fast: false
+
     steps:
       - name: 💾 Setup 10GB Swap Space
         uses: pierotofy/set-swap-space@master
@@ -97,86 +116,57 @@ jobs:
 
       - name: 🔧 Setup Compiler Toolchain
         run: |
-          case ${{ env.COMPILER_CHOICE }} in
-            "proton")
-              echo "⚡ Setting up Proton Clang..."
-              git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton
-              echo "${WORKSPACE}/proton/bin" >> $GITHUB_PATH
-              ;;
-            "aosp")
-              echo "⚡ Setting up AOSP Clang..."
-              git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r498229b aosp-clang
-              echo "${WORKSPACE}/aosp-clang/bin" >> $GITHUB_PATH
+          CONFIG_FILE="Kernel/configs/build.config.json"
+          COMPILER_INFO=$(jq -r --arg code "${{ matrix.compiler }}" '.compilerToolchains[] | select(.code == $code)' $CONFIG_FILE)
+          
+          case ${{ matrix.compiler }} in
+            "proton"|"aosp"|"neutron"|"nexus"|"zyc"|"cosmic"|"azure"|"sdclang"|"ghost"|"gray")
+              REPO=$(echo $COMPILER_INFO | jq -r .repo)
+              echo "⚡ Setting up $(echo $COMPILER_INFO | jq -r .name)..."
+              git clone --depth=1 $REPO ${{ matrix.compiler }}
+              echo "${GITHUB_WORKSPACE}/${{ matrix.compiler }}/bin" >> $GITHUB_PATH
               ;;
             "eva")
               echo "⚡ Setting up Eva GCC..."
-              git clone --depth=1 https://github.com/mvaisakh/gcc-arm64.git -b gcc-new eva64
-              git clone --depth=1 https://github.com/mvaisakh/gcc-arm.git -b gcc-new eva32
-              echo "${WORKSPACE}/eva64/bin" >> $GITHUB_PATH
-              echo "${WORKSPACE}/eva32/bin" >> $GITHUB_PATH
-              ;;
-            "neutron")
-              echo "⚡ Setting up Neutron Clang..."
-              git clone --depth=1 https://github.com/Neutron-Clang/neutron-toolchain.git neutron
-              echo "${WORKSPACE}/neutron/bin" >> $GITHUB_PATH
-              ;;
-            "nexus")
-              echo "⚡ Setting up Nexus Clang..."
-              git clone --depth=1 -b nexus-14 https://gitlab.com/Project-Nexus/nexus-clang.git nexus
-              echo "${WORKSPACE}/nexus/bin" >> $GITHUB_PATH
-              ;;
-            "zyc")
-              echo "⚡ Setting up ZyC Clang..."
-              git clone --depth=1 https://github.com/ZyCromerZ/Clang.git zyc
-              echo "${WORKSPACE}/zyc/bin" >> $GITHUB_PATH
-              ;;
-            "cosmic")
-              echo "⚡ Setting up Cosmic Clang..."
-              git clone --depth=1 https://gitlab.com/GhostMaster69/cosmic-clang.git cosmic
-              echo "${WORKSPACE}/cosmic/bin" >> $GITHUB_PATH
-              ;;
-            "azure")
-              echo "⚡ Setting up Azure Clang..."
-              git clone --depth=1 https://gitlab.com/Panchajanya1999/azure-clang.git azure
-              echo "${WORKSPACE}/azure/bin" >> $GITHUB_PATH
-              ;;
-            "sdclang")
-              echo "⚡ Setting up Snapdragon Clang..."
-              git clone --depth=1 https://github.com/proprietary-stuff/sdclang.git sdclang
-              echo "${WORKSPACE}/sdclang/bin" >> $GITHUB_PATH
-              ;;
-            "ghost")
-              echo "⚡ Setting up Ghost Clang..."
-              git clone --depth=1 https://gitlab.com/GhostMaster69/ghost-clang.git ghost
-              echo "${WORKSPACE}/ghost/bin" >> $GITHUB_PATH
-              ;;
-            "gray")
-              echo "⚡ Setting up Gray Clang..."
-              git clone --depth=1 https://github.com/userariii/gray-clang.git gray
-              echo "${WORKSPACE}/gray/bin" >> $GITHUB_PATH
+              REPO64=$(echo $COMPILER_INFO | jq -r .repo64)
+              REPO32=$(echo $COMPILER_INFO | jq -r .repo32)
+              BRANCH=$(echo $COMPILER_INFO | jq -r .branch)
+              git clone --depth=1 $REPO64 -b $BRANCH eva64
+              git clone --depth=1 $REPO32 -b $BRANCH eva32
+              echo "${GITHUB_WORKSPACE}/eva64/bin" >> $GITHUB_PATH
+              echo "${GITHUB_WORKSPACE}/eva32/bin" >> $GITHUB_PATH
               ;;
           esac
-
-      - name: 📥 Clone Kernel Source
-        run: |
-          echo "🌟 Cloning kernel source..."
-          git clone --depth=1 -b ${{ env.KERNEL_BRANCH }} ${{ env.KERNEL_REPO }} kernel_source
-          echo "✅ Kernel source cloned successfully!"
 
       - name: 🔄 Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ env.KERNEL_NAME }}-${{ env.COMPILER_CHOICE }}
+          key: kernel-${{ matrix.compiler }}
           max-size: 2G
+
+      - name: 📥 Clone Kernel Source
+        run: |
+          CONFIG_FILE="Kernel/configs/build.config.json"
+          KERNEL_CONFIG=$(jq -r '.buildConfig.kernelConfig' $CONFIG_FILE)
+          
+          KERNEL_REPO=$(echo $KERNEL_CONFIG | jq -r .repo)
+          KERNEL_BRANCH=$(echo $KERNEL_CONFIG | jq -r .branch)
+          
+          echo "🌟 Cloning kernel source..."
+          git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO kernel_source
+          echo "✅ Kernel source cloned successfully!"
 
       - name: ⚙️ Configure Build Environment
         run: |
-          mkdir -p ${{ env.OUT_DIR }}
+          CONFIG_FILE="Kernel/configs/build.config.json"
+          KERNEL_CONFIG=$(jq -r '.buildConfig.kernelConfig' $CONFIG_FILE)
+          
+          mkdir -p out
           echo "🔧 Setting up build environment..."
           
-          case ${{ env.COMPILER_CHOICE }} in
+          case ${{ matrix.compiler }} in
             "proton"|"aosp"|"neutron"|"nexus"|"zyc"|"cosmic"|"azure"|"sdclang"|"ghost"|"gray")
-              export KBUILD_COMPILER_STRING="${{ env.COMPILER_CHOICE }} Clang"
+              export KBUILD_COMPILER_STRING="${{ matrix.compiler }} Clang"
               export ARCH=arm64
               export SUBARCH=arm64
               export CROSS_COMPILE=aarch64-linux-gnu-
@@ -199,11 +189,16 @@ jobs:
       - name: 🚀 Build Kernel
         run: |
           cd kernel_source
+          
+          CONFIG_FILE="../Kernel/configs/build.config.json"
+          KERNEL_CONFIG=$(jq -r '.buildConfig.kernelConfig' $CONFIG_FILE)
+          DEFCONFIG=$(echo $KERNEL_CONFIG | jq -r .defconfig)
+          
           echo "🏗️ Starting kernel build..."
           
-          make O=${{ env.OUT_DIR }} ARCH=arm64 ${{ env.KERNEL_DEFCONFIG }}
+          make O=../out ARCH=arm64 $DEFCONFIG
           
-          make -j$(nproc --all) O=${{ env.OUT_DIR }} \
+          make -j$(nproc --all) O=../out \
             ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -211,74 +206,110 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM=1 \
             LLVM_IAS=1 2>&1 | tee kernel_build.log
-          
-          echo "✅ Kernel build completed!"
 
-      - name: 📦 Prepare AnyKernel3
+      - name: 📦 Package Kernel
         if: success()
         run: |
-          echo "🔧 Setting up AnyKernel3..."
-          git clone --depth=1 https://github.com/internetuser111/AnyKernel3 -b op7-nh ${{ env.ANYKERNEL3_DIR }}
+          CONFIG_FILE="Kernel/configs/build.config.json"
+          
+          # Get AnyKernel3 config
+          AK3_CONFIG=$(jq -r '.buildConfig.anykernel3Config' $CONFIG_FILE)
+          AK3_REPO=$(echo $AK3_CONFIG | jq -r .repo)
+          AK3_BRANCH=$(echo $AK3_CONFIG | jq -r .branch)
+          
+          # Clone AnyKernel3
+          git clone --depth=1 $AK3_REPO -b $AK3_BRANCH AnyKernel3
           
           # Copy kernel files
-          if [ -f ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz-dtb ]; then
-            cp ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz-dtb ${{ env.ANYKERNEL3_DIR }}/
-          fi
-          if [ -f ${{ env.OUT_DIR }}/arch/arm64/boot/dtbo.img ]; then
-            cp ${{ env.OUT_DIR }}/arch/arm64/boot/dtbo.img ${{ env.ANYKERNEL3_DIR }}/
-          fi
+          cp out/arch/arm64/boot/Image AnyKernel3/
+          cp out/arch/arm64/boot/dtbo.img AnyKernel3/ || true
+          find out/arch/arm64/boot/dts/vendor/qcom -name '*.dtb' -exec cat {} + > AnyKernel3/dtb
           
-          # Zip package
-          cd ${{ env.ANYKERNEL3_DIR }}
-          zip -r9 "../${{ env.KERNEL_NAME }}-${{ env.COMPILER_CHOICE }}-${{ env.BUILD_DATE }}.zip" * -x .git README.md *placeholder
+          # Create zip
+          KERNEL_NAME=$(jq -r '.buildConfig.kernelConfig.name' $CONFIG_FILE)
+          DEVICE=$(jq -r '.buildConfig.kernelConfig.device' $CONFIG_FILE)
+          BUILD_DATE=$(date +'%Y%m%d')
+          
+          cd AnyKernel3
+          zip -r9 "../$KERNEL_NAME-$DEVICE-${{ matrix.compiler }}-$BUILD_DATE.zip" * -x .git README.md *placeholder
 
-      - name: 📤 Upload Kernel Package
-        if: success()
+      - - name: 📤 Upload Kernel Package
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ env.KERNEL_NAME }}-${{ env.COMPILER_CHOICE }}-${{ env.BUILD_DATE }}
-          path: ${{ env.KERNEL_NAME }}-${{ env.COMPILER_CHOICE }}-${{ env.BUILD_DATE }}.zip
+          name: ${{ matrix.compiler }}-kernel-package
+          path: "*.zip"
+          if-no-files-found: error
 
-      - name: 📊 Upload Build Logs
+      - name: 📤 Upload Build Log
         if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: build-logs-${{ env.COMPILER_CHOICE }}-${{ env.BUILD_DATE }}
+          name: ${{ matrix.compiler }}-build-log
           path: kernel_source/kernel_build.log
+          if-no-files-found: warn
 
-      - name: 🎉 Create Release
+      - name: 📊 Build Status Check
+        if: always()
+        run: |
+          if [ -f out/arch/arm64/boot/Image ]; then
+            echo "✅ Kernel built successfully!"
+            exit 0
+          else
+            echo "❌ Kernel build failed!"
+            exit 1
+          fi
+
+  Release-Kernel:
+    name: 🚀 Create Release
+    needs: Build-Kernel
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Download Artifacts
+        uses: actions/download-artifact@v3
+
+      - name: 📦 Prepare Release
+        run: |
+          mkdir -p release
+          find . -name "*.zip" -exec cp {} release/ \;
+
+      - name: 📅 Get Current Date
+        id: date
+        run: echo "date=$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+
+      - name: 🏷️ Create Release
         uses: softprops/action-gh-release@v1
-        if: success()
         with:
-          files: ${{ env.KERNEL_NAME }}-${{ env.COMPILER_CHOICE }}-${{ env.BUILD_DATE }}.zip
-          name: ${{ env.KERNEL_NAME }} ${{ env.COMPILER_CHOICE }} Build ${{ env.BUILD_DATE }}
-          tag_name: ${{ env.COMPILER_CHOICE }}-${{ env.BUILD_DATE }}
+          files: release/*.zip
+          name: Kernel Build ${{ steps.date.outputs.date }}
+          tag_name: ${{ steps.date.outputs.date }}
           body: |
             🎉 Automated Kernel Build
-            
-            📱 Device: OnePlus 7 Series
-            🔧 Compiler: ${{ env.COMPILER_CHOICE }}
-            📅 Build Date: ${{ env.BUILD_DATE }}
-            
-            ⚡ Features:
-            - Base: YAAP Kernel
-            - Compiler: ${{ env.COMPILER_CHOICE }}
-            - Architecture: ARM64
-            
+
+            📅 Build Date: ${{ steps.date.outputs.date }}
+            🔧 Compilers Used: ${{ needs.Parse-Input.outputs.compiler_list }}
+
             📝 Notes:
-            - Built using GitHub Actions
-            - Automated build process
+            - Latest source from default branch
+            - Automated build through GitHub Actions
             
-            ⚠️ Flash at your own risk!
+            📦 Downloads:
+            - Kernel packages are attached below
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🧹 Cleanup
-        if: always()
-        run: |
-          echo "🧹 Cleaning up workspace..."
-          rm -rf ${{ env.OUT_DIR }}
-          rm -rf ${{ env.ANYKERNEL3_DIR }}
-          echo "✅ Cleanup completed!"
+  Cleanup:
+    name: 🧹 Cleanup Artifacts
+    needs: Release-Kernel
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🗑️ Delete Artifacts
+        uses: geekyeggo/delete-artifact@v2
+        with:
+          failOnError: false
+          name: |
+            *-kernel-package
+            *-build-log
