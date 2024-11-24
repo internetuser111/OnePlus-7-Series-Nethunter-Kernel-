@@ -90,6 +90,5 @@
       "repo": "https://github.com/gray/clang",
       "branch": "gray-master"
     }
-    // Add additional compiler configurations here if needed
   ]
 }
