@@ -233,7 +233,7 @@ jobs:
           cd AnyKernel3
           zip -r9 "../$KERNEL_NAME-$DEVICE-${{ matrix.compiler }}-$BUILD_DATE.zip" * -x .git README.md *placeholder
 
-      - - name: 📤 Upload Kernel Package
+      - name: 📤 Upload Kernel Package
         uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.compiler }}-kernel-package
