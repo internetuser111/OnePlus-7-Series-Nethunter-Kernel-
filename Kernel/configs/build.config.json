@@ -1,19 +1,35 @@
 [
   {
     "kernelSource": {
-      "name": "Op7Series_KSU_Nethunter",
-      "repo": "https://github.com/yaap/kernel_oneplus_sm8150",
-      "branch": "fourteen",
-      "device": "Oneplus7Series",
-      "defconfig": "gulch_defconfig"
+      "name": "op7",
+      "repo": "github.com/kimocoder/op7",
+      "branch": "nethunter-11.0",
+      "device": "op7",
+      "defconfig": "nethunter_defconfig"
     },
     "toolchains": [
       {
-        "repo": "https://gitlab.com/internetuser111/prebuilts_clang_host_linux-x86",
-        "branch": "fourteen",
+        "repo": "https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b",
+        "branch": "lineage-20.0",
         "name": "clang",
         "binaryEnv": [
-          "clang-r522817/bin"
+          "bin"
+        ]
+      },
+      {
+        "repo": "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9",
+        "branch": "lineage-19.1",
+        "name": "aarch64",
+        "binaryEnv": [
+          "bin"
+        ]
+      },
+      {
+        "repo": "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9",
+        "branch": "lineage-19.1",
+        "name": "arm",
+        "binaryEnv": [
+          "bin"
         ]
       }
     ],
@@ -40,68 +56,10 @@
       }
     },
     "AnyKernel3": {
-        "use": true,
-        "release": true,
-        "custom": {
-          "repo": "https://github.com/internetuser111/AnyKernel3",
-          "branch": "op7-nh"
-        }
-      },
-      "enableKernelSU": true,
-      "enableLXC": true
-    }
-]
-
-[
-  {
-    "kernelSource": {
-      "name": "Op7Series_Nethunter",
-      "repo": "https://github.com/yaap/kernel_oneplus_sm8150",
-      "branch": "fourteen",
-      "device": "Oneplus7Series",
-      "defconfig": "gulch_defconfig"
+      "use": true,
+      "release": true
     },
-    "toolchains": [
-      {
-        "repo": "https://gitlab.com/internetuser111/prebuilts_clang_host_linux-x86",
-        "branch": "fourteen",
-        "name": "clang",
-        "binaryEnv": [
-          "clang-r522817/bin"
-        ]
-      }
-    ],
-    "enableCcache": true,
-    "params": {
-      "ARCH": "arm64",
-      "CC": "clang",
-      "externalCommands": {
-        "CLANG_TRIPLE": "aarch64-linux-gnu-",
-        "CROSS_COMPILE": "aarch64-linux-android-",
-        "CROSS_COMPILE_ARM32": "arm-linux-androideabi-",
-        "LD": "ld.lld",
-        "AR": "llvm-ar",
-        "NM": "llvm-nm",
-        "OBJCOPY": "llvm-objcopy",
-        "OBJDUMP": "llvm-objdump",
-        "READELF": "llvm-readelf",
-        "OBJSIZE": "llvm-size",
-        "STRIP": "llvm-strip",
-        "LDGOLD": "aarch64-linux-gnu-ld.gold",
-        "LLVM_AR": "llvm-ar",
-        "LLVM_DIS": "llvm-dis",
-        "CONFIG_THINLTO": "y"
-      }
-    },
-    "AnyKernel3": {
-        "use": true,
-        "release": true,
-        "custom": {
-          "repo": "https://github.com/internetuser111/AnyKernel3",
-          "branch": "op7-nh"
-        }
-      },
-      "enableKernelSU": false,
-      "enableLXC": false
-    }
+    "enableKernelSU": true,
+    "enableLXC": true
+  }
 ]
