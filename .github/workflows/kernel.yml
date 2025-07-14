@@ -1,26 +1,19 @@
 name: Build kernels
 
 on:
-  push:
-    paths:
-      - ".github/workflows/kernel.yml"
   workflow_dispatch:
-  schedule:
-    - cron: "14 13 * * 5"
 
 jobs:
   Read-configuration:
     name: 🐂 Parse *.config.json
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     outputs:
       CONFIGS: ${{ steps.generate-matrix.outputs.CONFIGS }}
       BUILD_DATE: ${{ steps.generate-builddate.outputs.BUILDDATE }}
     steps:
-      # This action checks-out your CONFIGSitory under $GITHUB_WORKSPACE, so your workflow can access it.
       - name: 😄 Checkout
         uses: actions/checkout@v4
 
-      # Match the configuration files in the CONFIGS directory, read the contents and merge them into an array.
       - name: 😆 Generate Matrix
         id: generate-matrix
         run: |
@@ -28,14 +21,13 @@ jobs:
           jq -s '[.[][]]' Kernel/configs/*.config.json >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # Set compile time.
       - name: ⏰ Set builddate
         id: generate-builddate
         run: echo "BUILDDATE=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
 
   Build-Kernel:
     name: "🐎 Build kernel"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     needs:
       - Read-configuration
     strategy:
@@ -44,70 +36,62 @@ jobs:
       matrix:
         CONFIG: ${{ fromJSON(needs.Read-configuration.outputs.CONFIGS) }}
     env:
-      # Basic configuration
       WORKSPACE: ${{ github.workspace }}
       BUILD_DATE: "${{ needs.Read-configuration.outputs.BUILD_DATE }}"
-
-      # Kernel source configuration
       KERNEL_NAME: ${{ matrix.CONFIG.kernelSource.name }}
       KERNEL_REPO: ${{ matrix.CONFIG.kernelSource.repo }}
       KERNEL_BRANCH: ${{ matrix.CONFIG.kernelSource.branch }}
       KERNEL_DEVICE: ${{ matrix.CONFIG.kernelSource.device }}
       KERNEL_DEFCONFIG_PATH: ${{ matrix.CONFIG.kernelSource.defconfig }}
-
-      # Whether to use ccache to speed up compilation
       ENABLE_CCACHE: ${{ matrix.CONFIG.enableCcache }}
-
-      # Whether to use ANYKERNEL3 packaged flash package
       USE_ANYKERNEL3: ${{ matrix.CONFIG.AnyKernel3.use }}
-
-      # Whether to publish
       CONFIRM_RELEASE: ${{ matrix.CONFIG.AnyKernel3.release }}
-
-      # Whether to enable KernelSU
       ENABLE_KERNELSU: ${{ matrix.CONFIG.enableKernelSU }}
-
-      # Whether to enable LXC docker
       ENABLE_LXC: ${{ matrix.CONFIG.enableLXC }}
-
-      # Set output & ccache directory
       OUT_DIR: "${{ github.workspace }}/out"
       CCACHE_DIR: "${{ github.workspace }}/ccache"
     steps:
-      # Set swap space
-      - name: 📐 Set swap to 10G
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      # This action checks-out your CONFIGSitory under $GITHUB_WORKSPACE, so your workflow can access it.
       - name: 😄 Checkout
         uses: actions/checkout@v4
 
-      # Install prerequisites for Ubuntu
       - name: ⭐ Install prerequisites
         run: |
+          cat /etc/os-release
           sudo apt-get update
-          sudo apt-get install -y curl git ftp lftp wget libarchive-tools ccache  python3
+          sudo apt-get install -y cpio curl git ftp lftp wget libarchive-tools ccache python2 python2-dev python3
           sudo apt-get install -y pngcrush schedtool dpkg-dev liblz4-tool make optipng maven device-tree-compiler 
           sudo apt-get install -y libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc
           sudo apt-get install -y libxml2-utils libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools lzop flex tree
           sudo apt-get install -y build-essential bc gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libfl-dev
           sudo apt-get install -y pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl 
           sudo apt-get install -y zip unzip tar gzip bzip2 rar unrar llvm g++-multilib bison gperf zlib1g-dev automake
-
-      # Initialize ccache
+          wget https://android.googlesource.com/platform/system/libufdt/+archive/refs/heads/master/utils.tar.gz
+          tar xvf utils.tar.gz
+          sudo cp src/mkdtboimg.py /usr/bin/mkdtimg
+          sudo chmod a+x /usr/bin/mkdtimg          
+      - name: Cleanup
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 512
+          swap-size-mb: 12288
+          remove-dotnet: "true"
+          remove-haskell: "true"
+          remove-codeql: "true"
+          remove-docker-images: "true"
+          
+      - name: Workaround for running out of disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet > /dev/null 2>&1
+          sudo rm -rf /opt/ghc > /dev/null 2>&1
+          sudo rm -rf /usr/local/share/boost > /dev/null 2>&1
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY" > /dev/null 2>&1      
+      
       - name: 🚄 Setup ccache
         if: ${{ env.ENABLE_CCACHE == 'true' }}
         id: hash
         run: |
-          # Create output directory
           mkdir -p ${{ env.OUT_DIR }}
-
-          # Initialize ccache
           ccache -o compression=false -o cache_dir=${{ env.CCACHE_DIR }}
-
-          # Generate configuration's hash
           echo $(echo -n '${{ toJSON(matrix.config) }}' | openssl dgst -sha1 | awk '{print $2}')
           echo "HASH=$(echo -n '${{ toJSON(matrix.config) }}' | openssl dgst -sha1 | awk '{print $2}')" >> $GITHUB_OUTPUT
 
@@ -115,7 +99,7 @@ jobs:
         env:
           HASH: ${{ steps.hash.outputs.HASH }}
         if: ${{ env.ENABLE_CCACHE == 'true' }}
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ${{ env.OUT_DIR }}
@@ -129,31 +113,24 @@ jobs:
       - name: 🌟 Clone kernel source => (${{ env.KERNEL_REPO }})
         run: |
           git clone --recursive --depth=1 -j $(nproc) --branch ${{ env.KERNEL_BRANCH }} ${{ env.KERNEL_REPO }} ${{ env.KERNEL_NAME }}
-          # tree ${{ env.KERNEL_NAME }}
+
+      - name: Remove BOM from dtsi file
+        run: |
+          sed -i '1s/^\xEF\xBB\xBF//' /home/runner/work/Android-Builder/Android-Builder/miatoll/arch/arm64/boot/dts/qcom/cust-atoll.dtsi
 
       - name: 💫 Get toolchains
         env:
           toolchains: "${{ toJSON(matrix.CONFIG.toolchains) }}"
         run: |
-          git lfs install
           toolchains_num="$(echo $toolchains | jq 'length')"
           echo "🤔 There is $toolchains_num defined toolchains."
-
           for ((i=0;i<toolchains_num;i++)); do
             toolchain=$(echo $toolchains | jq -r ".[$i]")
-
             toolchain_name=$(echo $toolchain | jq -r ".name")
-            
-            # From archive
             if echo $toolchain | jq -e 'has("url")' > /dev/null; then
-              # If from archive
               toolchain_url=$(echo $toolchain | jq -r ".url")
               mkdir -p $toolchain_name
-
-              # Download archive
               wget "$toolchain_url"
-
-              # Get filename
               filename="${toolchain_url##*/}"
               case "$filename" in
                 *.zip)
@@ -172,19 +149,14 @@ jobs:
                   echo "unknown file type: $filename"
                   ;;
               esac
-              # Delete file to avoid duplicate name conflicts 
               rm $filename
-
               echo "🤔 Download $toolchain_name => ($toolchain_url)"
             else
-              # If from git
               toolchain_repo=$(echo $toolchain | jq -r ".repo")
               toolchain_branch=$(echo $toolchain | jq -r ".branch")
               git clone --recursive --depth=1 -j $(nproc) --branch $toolchain_branch $toolchain_repo $toolchain_name
-
               echo "🤔 Clone $toolchain_name => ($toolchain_repo)"
             fi
-
             jq -r ".binaryEnv[] | tostring" <<< "$toolchain" | while read -r subPath; do
               echo "${{ env.WORKSPACE }}/$toolchain_name/$subPath" >> $GITHUB_PATH
             done
@@ -197,17 +169,13 @@ jobs:
           THREAD: $(nproc --all)
         run: |
           echo "🤔 PATH Variable: $PATH"
-
           ARCH=$(echo $PARAMS | jq -r ".ARCH")
           CC=$(echo $PARAMS | jq -r ".CC")
-
           args="-j${{ env.THREAD }} O=${{ env.OUT_DIR }} ARCH=$ARCH"
           if [ -n "$CC" ]; then
-
             if [[ "$CC" == *"/"* ]]; then
               CC=${{ env.WORKSPACE }}/$CC
             fi
-
             if [ ${{ env.ENABLE_CCACHE }} = true ]; then
               args="$args CC=\"ccache $CC\""
             else
@@ -222,10 +190,8 @@ jobs:
             fi
             args="$args $key=$value"
           done < <(jq -r '.externalCommands | to_entries[] | "\(.key)=\(.value)"' <<< "$PARAMS")
-
           echo "ARCH=$ARCH" >> $GITHUB_OUTPUT
           echo "ARGS=$args" >> $GITHUB_OUTPUT
-
           echo "🤔 $args"
 
       - name: 😋 Setup KernelSU
@@ -234,40 +200,17 @@ jobs:
           ARCH: ${{ steps.generate-args.outputs.ARCH }}
         if: ${{ env.ENABLE_KERNELSU == 'true' }}
         run: |
-          # Delete old KernelSU
           if [ -d "./KernelSU" ]; then
             rm -rf "./KernelSU"
           fi
           if [ -d "./drivers/kernelsu" ]; then
             rm -rf "./drivers/kernelsu"
           fi
-
-          # Apply new KernelSU patches
-          patch -p1 < kernelsu.patch
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
-          cd KernelSU
-          wget https://gist.githubusercontent.com/Kadalis/07cc708c7fb66c12f2af2eae05d0d6ea/raw/86ae3f82da7eca5aae6e41756f6d9e2eb1201a16/ksu_fix_op_not_permitted.patch
-          patch -p1 < ksu_fix_op_not_permitted.patch
-          cd ..
+          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
           echo -e "CONFIG_KPROBES=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }}
           echo -e "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }}
           echo -e "CONFIG_KPROBE_EVENTS=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }}
-
           cat arch/${{ env.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }}
-
-      - name: 🦾 Setup Kali-Nethunter
-        run: |
-          cd $GITHUB_WORKSPACE/${{ env.KERNEL_NAME }}
-          git clone https://github.com/tomxi1997/kali-nethunter_patches.git
-          patch -p1 < kali-nethunter_patches/add-rtl88xxau-5.6.4.2-drivers.patch
-          patch -p1 < kali-nethunter_patches/add-wifi-injection-4.14.patch
-          patch -p1 < kali-nethunter_patches/fix-ath9k-naming-conflict.patch
-          sleep 8
-          git clone https://github.com/acai66/Kali-defconfig-checker kali
-          cd kali
-          chmod +x *.sh
-          chmod +x check-kernel-config
-          ./check-kernel-config $GITHUB_WORKSPACE/${{ env.KERNEL_NAME }}/arch/${{ steps.generate-args.outputs.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }} -w
 
       - name: 😋 Setup LXC docker
         working-directory: ${{ env.KERNEL_NAME }}
@@ -276,13 +219,10 @@ jobs:
           ADD_DEFCONFIG: ${{ env.WORKSPACE }}/Kernel/LXC/LXC_defconfig
         if: ${{ env.ENABLE_LXC == 'true' }}
         run: |
-          # Add configuration
           for config in $(cat ${{ env.ADD_DEFCONFIG }})
           do
-            echo $i >> ${{ env.DEFCONFIG }}
+            echo $config >> ${{ env.DEFCONFIG }}
           done
-
-          # Apply patch
           if [ -f kernel/cgroup.c ]; then
             row=$(sed -n -e '/^static int cgroup_add_file/=' kernel/cgroup.c)
             touch /tmp/tmp.txt
@@ -318,11 +258,10 @@ jobs:
           ARGS: ${{ steps.generate-args.outputs.ARGS }}
         run: |
           echo "🤔 PATH Variable: $PATH"
-          export KBUILD_BUILD_HOST=internetuser111
-          export KBUILD_BUILD_USER=internetuser111
+          export KBUILD_BUILD_HOST=Github-Action
+          export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
           make ${{ env.ARGS }} ${{ env.KERNEL_DEFCONFIG_PATH }}
           make ${{ env.ARGS }}
-          # tree ${{ env.OUT_DIR }}
 
       - name: 💛 Upload Image
         uses: actions/upload-artifact@v4
@@ -401,9 +340,8 @@ jobs:
             sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
             sed -i 's!block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!block=auto;!g' AnyKernel3/anykernel.sh
             sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
-            echo "🤔 Use origin Anykernel3 => (https://github.com/osm0sis/AnyKernel3)"
+            echo "🤔 Use origin AnyKernel3 => (https://github.com/osm0sis/AnyKernel3)"
           fi
-
 
           if [ -e "${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz-dtb" ]; then
             cp -f ${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz-dtb ./AnyKernel3/
