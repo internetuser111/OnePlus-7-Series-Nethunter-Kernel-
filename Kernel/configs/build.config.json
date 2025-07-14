@@ -1,94 +1,107 @@
-{
-  "buildConfig": {
-    "kernelConfig": {
-      "name": "Op7Series_Custom_Kernel",
+[
+  {
+    "kernelSource": {
+      "name": "Op7Series_KSU_Nethunter",
+      "repo": "https://github.com/yaap/kernel_oneplus_sm8150",
+      "branch": "fourteen",
       "device": "Oneplus7Series",
-      "repo": "hhttps://github.com/kimocoder/op7",
-      "branch": "nethunter-11.0",
-      "defconfig": "nethunter_defconfig"
+      "defconfig": "gulch_defconfig"
     },
-    "anykernel3Config": {
-      "repo": "https://github.com/internetuser111/AnyKernel3",
-      "branch": "op7-nh"
+    "toolchains": [
+      {
+        "repo": "https://gitlab.com/internetuser111/prebuilts_clang_host_linux-x86",
+        "branch": "fourteen",
+        "name": "clang",
+        "binaryEnv": [
+          "clang-r522817/bin"
+        ]
+      }
+    ],
+    "enableCcache": true,
+    "params": {
+      "ARCH": "arm64",
+      "CC": "clang",
+      "externalCommands": {
+        "CLANG_TRIPLE": "aarch64-linux-gnu-",
+        "CROSS_COMPILE": "aarch64-linux-android-",
+        "CROSS_COMPILE_ARM32": "arm-linux-androideabi-",
+        "LD": "ld.lld",
+        "AR": "llvm-ar",
+        "NM": "llvm-nm",
+        "OBJCOPY": "llvm-objcopy",
+        "OBJDUMP": "llvm-objdump",
+        "READELF": "llvm-readelf",
+        "OBJSIZE": "llvm-size",
+        "STRIP": "llvm-strip",
+        "LDGOLD": "aarch64-linux-gnu-ld.gold",
+        "LLVM_AR": "llvm-ar",
+        "LLVM_DIS": "llvm-dis",
+        "CONFIG_THINLTO": "y"
+      }
+    },
+    "AnyKernel3": {
+        "use": true,
+        "release": true,
+        "custom": {
+          "repo": "https://github.com/internetuser111/AnyKernel3",
+          "branch": "op7-nh"
+        }
+      },
+      "enableKernelSU": true,
+      "enableLXC": true
     }
-  },
-  "compilerToolchains": [
-    {
-      "id": 1,
-      "name": "Proton Clang",
-      "code": "proton",
-      "repo": "https://github.com/kdrag0n/proton-clang"
+]
+
+[
+  {
+    "kernelSource": {
+      "name": "Op7Series_Nethunter",
+      "repo": "https://github.com/yaap/kernel_oneplus_sm8150",
+      "branch": "fourteen",
+      "device": "Oneplus7Series",
+      "defconfig": "gulch_defconfig"
     },
-    {
-      "id": 2,
-      "name": "Eva GCC",
-      "code": "eva",
-      "repo64": "https://github.com/mvaisakh/gcc-arm64",
-      "repo32": "https://github.com/mvaisakh/gcc-arm",
-      "branch": "gcc-master"
+    "toolchains": [
+      {
+        "repo": "https://gitlab.com/internetuser111/prebuilts_clang_host_linux-x86",
+        "branch": "fourteen",
+        "name": "clang",
+        "binaryEnv": [
+          "clang-r522817/bin"
+        ]
+      }
+    ],
+    "enableCcache": true,
+    "params": {
+      "ARCH": "arm64",
+      "CC": "clang",
+      "externalCommands": {
+        "CLANG_TRIPLE": "aarch64-linux-gnu-",
+        "CROSS_COMPILE": "aarch64-linux-android-",
+        "CROSS_COMPILE_ARM32": "arm-linux-androideabi-",
+        "LD": "ld.lld",
+        "AR": "llvm-ar",
+        "NM": "llvm-nm",
+        "OBJCOPY": "llvm-objcopy",
+        "OBJDUMP": "llvm-objdump",
+        "READELF": "llvm-readelf",
+        "OBJSIZE": "llvm-size",
+        "STRIP": "llvm-strip",
+        "LDGOLD": "aarch64-linux-gnu-ld.gold",
+        "LLVM_AR": "llvm-ar",
+        "LLVM_DIS": "llvm-dis",
+        "CONFIG_THINLTO": "y"
+      }
     },
-    {
-      "id": 3,
-      "name": "AOSP Clang",
-      "code": "aosp",
-      "repo": "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86",
-      "branch": "clang-release-4151909"
-    },
-    {
-      "id": 4,
-      "name": "Neutron Clang",
-      "code": "neutron",
-      "repo": "https://github.com/Neutron-Compiler/clang",
-      "branch": "master"
-    },
-    {
-      "id": 5,
-      "name": "Nexus Clang",
-      "code": "nexus",
-      "repo": "https://github.com/nexus-os/clang",
-      "branch": "nexus-13"
-    },
-    {
-      "id": 6,
-      "name": "ZYC Clang",
-      "code": "zyc",
-      "repo": "https://github.com/zycolic/clang",
-      "branch": "main"
-    },
-    {
-      "id": 7,
-      "name": "Cosmic Clang",
-      "code": "cosmic",
-      "repo": "https://github.com/cosmic-clang/clang",
-      "branch": "cosmic-release"
-    },
-    {
-      "id": 8,
-      "name": "Azure Clang",
-      "code": "azure",
-      "repo": "https://github.com/azure/clang",
-      "branch": "release-15"
-    },
-    {
-      "id": 9,
-      "name": "SDClang",
-      "code": "sdclang",
-      "repo": "https://github.com/sdclang/sdclang",
-      "branch": "main"
-    },
-    {
-      "id": 10,
-      "name": "Ghost Clang",
-      "code": "ghost",
-      "repo": "https://github.com/ghost-clang/clang",
-      "branch": "ghost-release"
-    },
-    {
-      "id": 11,
-      "name": "Gray Clang",
-      "code": "gray",
-      "repo": "https://github.com/gray/clang",
-      "branch": "gray-master"
+    "AnyKernel3": {
+        "use": true,
+        "release": true,
+        "custom": {
+          "repo": "https://github.com/internetuser111/AnyKernel3",
+          "branch": "op7-nh"
+        }
+      },
+      "enableKernelSU": false,
+      "enableLXC": false
     }
-  ]
-}
+]
