@@ -3,9 +3,9 @@
     "kernelConfig": {
       "name": "Op7Series_Custom_Kernel",
       "device": "Oneplus7Series",
-      "repo": "https://github.com/yaap/kernel_oneplus_sm8150",
-      "branch": "fourteen",
-      "defconfig": "gulch_defconfig"
+      "repo": "hhttps://github.com/kimocoder/op7/",
+      "branch": "nethunter-11.0",
+      "defconfig": "nethunter_defconfig"
     },
     "anykernel3Config": {
       "repo": "https://github.com/internetuser111/AnyKernel3",
