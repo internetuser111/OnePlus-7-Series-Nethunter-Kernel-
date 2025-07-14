@@ -2,7 +2,7 @@
   {
     "kernelSource": {
       "name": "op7",
-      "repo": "github.com/kimocoder/op7",
+      "repo": "https://github.com/kimocoder/op7",
       "branch": "nethunter-11.0",
       "device": "op7",
       "defconfig": "nethunter_defconfig"
