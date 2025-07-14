@@ -3,7 +3,7 @@
     "kernelConfig": {
       "name": "Op7Series_Custom_Kernel",
       "device": "Oneplus7Series",
-      "repo": "hhttps://github.com/kimocoder/op7/",
+      "repo": "hhttps://github.com/kimocoder/op7",
       "branch": "nethunter-11.0",
       "defconfig": "nethunter_defconfig"
     },
