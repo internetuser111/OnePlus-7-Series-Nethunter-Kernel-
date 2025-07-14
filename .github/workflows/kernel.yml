@@ -135,6 +135,7 @@ jobs:
         env:
           toolchains: "${{ toJSON(matrix.CONFIG.toolchains) }}"
         run: |
+          git lfs install
           toolchains_num="$(echo $toolchains | jq 'length')"
           echo "🤔 There is $toolchains_num defined toolchains."
 
@@ -242,13 +243,31 @@ jobs:
           fi
 
           # Apply new KernelSU patches
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
-
+          patch -p1 < kernelsu.patch
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
+          cd KernelSU
+          wget https://gist.githubusercontent.com/Kadalis/07cc708c7fb66c12f2af2eae05d0d6ea/raw/86ae3f82da7eca5aae6e41756f6d9e2eb1201a16/ksu_fix_op_not_permitted.patch
+          patch -p1 < ksu_fix_op_not_permitted.patch
+          cd ..
           echo -e "CONFIG_KPROBES=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }}
           echo -e "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }}
           echo -e "CONFIG_KPROBE_EVENTS=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }}
 
           cat arch/${{ env.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }}
+
+      - name: 🦾 Setup Kali-Nethunter
+        run: |
+          cd $GITHUB_WORKSPACE/${{ env.KERNEL_NAME }}
+          git clone https://github.com/tomxi1997/kali-nethunter_patches.git
+          patch -p1 < kali-nethunter_patches/add-rtl88xxau-5.6.4.2-drivers.patch
+          patch -p1 < kali-nethunter_patches/add-wifi-injection-4.14.patch
+          patch -p1 < kali-nethunter_patches/fix-ath9k-naming-conflict.patch
+          sleep 8
+          git clone https://github.com/acai66/Kali-defconfig-checker kali
+          cd kali
+          chmod +x *.sh
+          chmod +x check-kernel-config
+          ./check-kernel-config $GITHUB_WORKSPACE/${{ env.KERNEL_NAME }}/arch/${{ steps.generate-args.outputs.ARCH }}/configs/${{ env.KERNEL_DEFCONFIG_PATH }} -w
 
       - name: 😋 Setup LXC docker
         working-directory: ${{ env.KERNEL_NAME }}
@@ -299,8 +318,8 @@ jobs:
           ARGS: ${{ steps.generate-args.outputs.ARGS }}
         run: |
           echo "🤔 PATH Variable: $PATH"
-          export KBUILD_BUILD_HOST=Github-Action
-          export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
+          export KBUILD_BUILD_HOST=dammer
+          export KBUILD_BUILD_USER=dammer
           make ${{ env.ARGS }} ${{ env.KERNEL_DEFCONFIG_PATH }}
           make ${{ env.ARGS }}
           # tree ${{ env.OUT_DIR }}
